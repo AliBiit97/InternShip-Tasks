@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quiz App</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f0f2f5; }
+    .card:hover { transform: scale(1.02); box-shadow: 0 8px 20px rgba(0,0,0,0.1); transition: 0.2s; }
+    .badge-type { font-size: 0.75rem; margin-left: 5px; }
+    .option-input-group { gap: 5px; display: flex; align-items: center; margin-bottom: 5px; }
+    .truncate { display: -webkit-box;  -webkit-box-orient: vertical; overflow: hidden; }
+  </style>
+</head>
+<body>
+<main class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-7">
+
+      <header class="mb-4 text-center">
+        <h1 class="h3">Quiz App</h1>
+        <p class="text-muted mb-0">Add, edit, or delete questions. Supports MCQ, Fill-in-the-blanks, Short & Long answers.</p>
+      </header>
+
+      <!-- Question Form -->
+      <section class="card p-3 mb-4">
+        <form id="questionForm" novalidate>
+          <div class="mb-3">
+            <label class="form-label">Question Type</label>
+            <select id="typeSelect" class="form-select">
+              <option value="mcq">MCQ</option>
+              <option value="fill">Fill-in-the-blank</option>
+              <option value="short">Short Answer</option>
+              <option value="long">Long Answer</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Question <span class="text-danger">*</span></label>
+            <input type="text" id="questionInput" class="form-control" placeholder="Enter question" required>
+            <div class="invalid-feedback">Question is required.</div>
+          </div>
+
+          <div id="mcqOptionsContainer" class="mb-3">
+            <label class="form-label">MCQ Options</label>
+            <div id="mcqOptions"></div>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="addOptionBtn">Add Option</button>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Answer</label>
+            <input type="text" id="answerInput" class="form-control" placeholder="Correct answer">
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Add Question</button>
+            <button type="button" class="btn btn-outline-danger" id="clearAllBtn">Clear All</button>
+            <div class="ms-auto align-self-center text-muted" id="countDisplay">0 questions</div>
+          </div>
+        </form>
+      </section>
+
+      <!-- Questions List -->
+      <section id="listSection">
+        <div id="questionsContainer" class="row g-3"></div>
+        <div id="emptyState" class="text-center py-5 text-muted">
+          <p class="mb-1">No questions yet.</p>
+          <small>Add questions using the form above.</small>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="editForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editModalLabel">Edit Question</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Question Type</label>
+            <select id="editTypeSelect" class="form-select" disabled></select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Question <span class="text-danger">*</span></label>
+            <input type="text" id="editQuestionInput" class="form-control" required>
+          </div>
+
+          <div id="editMcqOptionsContainer" class="mb-3">
+            <label class="form-label">MCQ Options</label>
+            <div id="editMcqOptions"></div>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="editAddOptionBtn">Add Option</button>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Answer</label>
+            <input type="text" id="editAnswerInput" class="form-control">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const questionForm = document.getElementById('questionForm');
+const typeSelect = document.getElementById('typeSelect');
+const questionInput = document.getElementById('questionInput');
+const mcqOptionsContainer = document.getElementById('mcqOptionsContainer');
+const mcqOptionsDiv = document.getElementById('mcqOptions');
+const addOptionBtn = document.getElementById('addOptionBtn');
+const answerInput = document.getElementById('answerInput');
+const questionsContainer = document.getElementById('questionsContainer');
+const emptyState = document.getElementById('emptyState');
+const countDisplay = document.getElementById('countDisplay');
+const clearAllBtn = document.getElementById('clearAllBtn');
+
+const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+const editForm = document.getElementById('editForm');
+const editTypeSelect = document.getElementById('editTypeSelect');
+const editQuestionInput = document.getElementById('editQuestionInput');
+const editMcqOptionsContainer = document.getElementById('editMcqOptionsContainer');
+const editMcqOptionsDiv = document.getElementById('editMcqOptions');
+const editAddOptionBtn = document.getElementById('editAddOptionBtn');
+const editAnswerInput = document.getElementById('editAnswerInput');
+
+let quiz = [];
+let editId = null;
+
+function uid() { return 'id_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+/* ---------------------------------------
+    🟦 LOCAL STORAGE FUNCTIONS
+--------------------------------------- */
+
+// 1️⃣ Load quiz from local storage
+function loadQuiz() {
+    const saved = localStorage.getItem("quizData");
+    quiz = saved ? JSON.parse(saved) : [];
+}
+
+// 2️⃣ Save quiz array to local storage
+function saveQuiz() {
+    localStorage.setItem("quizData", JSON.stringify(quiz));
+}
+
+/* ---------------------------------------
+    🟦 UI FUNCTIONS
+--------------------------------------- */
+
+// Show/hide MCQ options
+function toggleMcqOptions(select, container) {
+  container.style.display = select.value === 'mcq' ? 'block' : 'none';
+}
+
+// Add option input dynamically
+function addOption(div) {
+  const group = document.createElement('div');
+  group.className = 'option-input-group';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'form-control';
+  input.placeholder = 'Option text';
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn btn-sm btn-outline-danger';
+  removeBtn.textContent = 'X';
+  removeBtn.addEventListener('click', () => div.removeChild(group));
+  group.appendChild(input);
+  group.appendChild(removeBtn);
+  div.appendChild(group);
+}
+
+// Render quiz list
+function render() {
+  questionsContainer.innerHTML = '';
+  if (!quiz.length) { emptyState.style.display = 'block'; } 
+  else { emptyState.style.display = 'none'; }
+
+  quiz.forEach(q => {
+    const col = document.createElement('div'); col.className = 'col-12';
+    const card = document.createElement('div'); card.className = 'card';
+    const cardBody = document.createElement('div'); cardBody.className = 'card-body';
+    
+    const typeBadge = document.createElement('span'); 
+    typeBadge.className = 'badge bg-info text-dark badge-type';
+    typeBadge.textContent = q.type.toUpperCase();
+    const questionEl = document.createElement('h5'); 
+    questionEl.className = 'card-title'; 
+    questionEl.textContent = q.question;
+    questionEl.appendChild(typeBadge);
+
+    cardBody.appendChild(questionEl);
+
+    if(q.type==='mcq' && q.options) {
+      const ul = document.createElement('ul');
+      q.options.forEach(opt => { 
+        const li=document.createElement('li'); 
+        li.textContent=opt; 
+        ul.appendChild(li); 
+      });
+      cardBody.appendChild(ul);
+    }
+
+    if(q.answer) {
+      const ans = document.createElement('p'); 
+      ans.innerHTML=`<strong>Answer:</strong> ${q.answer}`;
+      cardBody.appendChild(ans);
+    }
+
+    // Actions
+    const actions = document.createElement('div'); 
+    actions.className='d-flex gap-2';
+    const editBtn=document.createElement('button'); 
+    editBtn.className='btn btn-sm btn-outline-primary'; 
+    editBtn.textContent='Edit';
+    editBtn.addEventListener('click',()=>openEditModal(q.id));
+
+    const deleteBtn=document.createElement('button'); 
+    deleteBtn.className='btn btn-sm btn-outline-danger'; 
+    deleteBtn.textContent='Delete';
+    deleteBtn.addEventListener('click',()=>{
+        quiz=quiz.filter(qq=>qq.id!==q.id);
+        saveQuiz();     // 🟩 save after delete
+        render();
+    });
+
+    actions.appendChild(editBtn); 
+    actions.appendChild(deleteBtn);
+    cardBody.appendChild(actions);
+
+    card.appendChild(cardBody); 
+    col.appendChild(card); 
+    questionsContainer.appendChild(col);
+  });
+  countDisplay.textContent=`${quiz.length} question${quiz.length===1?'':'s'}`;
+}
+
+// Open edit modal
+function openEditModal(id) {
+  editId=id;
+  const q=quiz.find(qq=>qq.id===id);
+  editTypeSelect.innerHTML=`<option>${q.type.toUpperCase()}</option>`;
+  editQuestionInput.value=q.question;
+  editAnswerInput.value=q.answer||'';
+
+  // MCQ options
+  editMcqOptionsDiv.innerHTML='';
+  if(q.type==='mcq') { 
+    toggleMcqOptions({value:'mcq'},editMcqOptionsContainer); 
+    q.options.forEach(opt=>{
+      const group=document.createElement('div'); 
+      group.className='option-input-group';
+      const input=document.createElement('input'); 
+      input.type='text'; 
+      input.value=opt; 
+      input.className='form-control';
+      const removeBtn=document.createElement('button'); 
+      removeBtn.type='button'; 
+      removeBtn.className='btn btn-sm btn-outline-danger'; 
+      removeBtn.textContent='X';
+      removeBtn.addEventListener('click',()=>editMcqOptionsDiv.removeChild(group));
+      group.appendChild(input); 
+      group.appendChild(removeBtn); 
+      editMcqOptionsDiv.appendChild(group);
+    });
+  } else { 
+    toggleMcqOptions({value:'other'},editMcqOptionsContainer); 
+  }
+
+  editModal.show();
+}
+
+/* ---------------------------------------
+    🟦 EVENT LISTENERS
+--------------------------------------- */
+
+typeSelect.addEventListener('change',()=>toggleMcqOptions(typeSelect,mcqOptionsContainer));
+editAddOptionBtn.addEventListener('click',()=>addOption(editMcqOptionsDiv));
+addOptionBtn.addEventListener('click',()=>addOption(mcqOptionsDiv));
+
+// Add Question
+questionForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  const type=typeSelect.value;
+  const questionText=questionInput.value.trim();
+  const ans=answerInput.value.trim();
+
+  if(!questionText){ 
+      questionInput.classList.add('is-invalid'); 
+      return; 
+  } else { 
+      questionInput.classList.remove('is-invalid'); 
+  }
+
+  let options=[];
+  if(type==='mcq') {
+    const optInputs=mcqOptionsDiv.querySelectorAll('input'); 
+    optInputs.forEach(i=>{ if(i.value.trim()) options.push(i.value.trim()); });
+    if(options.length<2){ alert('MCQ requires at least 2 options'); return; }
+  }
+
+  quiz.unshift({ 
+      id: uid(), 
+      type, 
+      question: questionText, 
+      options: type==='mcq'?options:[], 
+      answer: ans 
+  });
+
+  saveQuiz();   // 🟩 save after adding
+  questionForm.reset(); 
+  mcqOptionsDiv.innerHTML=''; 
+  toggleMcqOptions(typeSelect,mcqOptionsContainer);
+  render();
+});
+
+// Edit question
+editForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  const questionText=editQuestionInput.value.trim();
+  const ans=editAnswerInput.value.trim();
+
+  if(!questionText){ 
+      editQuestionInput.classList.add('is-invalid'); 
+      return; 
+  } else { 
+      editQuestionInput.classList.remove('is-invalid'); 
+  }
+
+  let options=[];
+  if(editTypeSelect.value.toLowerCase()==='mcq') {
+    const optInputs=editMcqOptionsDiv.querySelectorAll('input'); 
+    optInputs.forEach(i=>{ if(i.value.trim()) options.push(i.value.trim()); });
+    if(options.length<2){ alert('MCQ requires at least 2 options'); return; }
+  }
+
+  quiz=quiz.map(q=>{
+    if(q.id===editId) 
+      return { ...q, question: questionText, options: options, answer: ans };
+    return q;
+  });
+
+  saveQuiz();   // 🟩 save after editing
+  editId=null; 
+  editModal.hide(); 
+  render();
+});
+
+// Clear All
+clearAllBtn.addEventListener('click',()=>{
+    if(confirm('Clear all questions?')){
+        quiz=[];
+        saveQuiz();     // 🟩 save after clear
+        render();
+    }
+});
+
+
+// Load data from local storage on page load
+loadQuiz();
+render();
+
+</script>
+
+</body>
+</html>
